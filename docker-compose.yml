@@ -1,0 +1,72 @@
+services:
+  sqldata:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: sqldata
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: "Developer"
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD}"
+    ports:
+      - "127.0.0.1:1434:1433"
+    volumes:
+      - sqldata_data:/var/opt/mssql
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: "${RABBITMQ_DEFAULT_USER}"
+      RABBITMQ_DEFAULT_PASS: "${RABBITMQ_DEFAULT_PASS}"
+    ports:
+      - "127.0.0.1:15672:15672"
+      - "127.0.0.1:5672:5672"
+    restart: unless-stopped
+
+  catalog.api:
+    build:
+      context: .
+      dockerfile: src/Services/Catalog.API/Dockerfile
+    container_name: catalog.api
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Development"
+      ASPNETCORE_HTTP_PORTS: "8080"
+      ConnectionStrings__DefaultConnection: "Server=sqldata,1433;Initial Catalog=CatalogDb;User ID=SA;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;MultipleActiveResultSets=true;"
+      RabbitMq__HostName: "rabbitmq"
+      RabbitMq__Port: "5672"
+      RabbitMq__UserName: "${RABBITMQ_DEFAULT_USER}"
+      RabbitMq__Password: "${RABBITMQ_DEFAULT_PASS}"
+      RabbitMqExchange__Exchange: "catalogitems"
+      RabbitMqExchange__QueueName: "itemspricechanged"
+      RabbitMqExchange__RoutingKeys: "myRoutingKey"
+    ports:
+      - "3000:8080"
+    depends_on:
+      - sqldata
+      - rabbitmq
+    restart: unless-stopped
+
+  shoppingcart.api:
+    image: eanarion/eshop:version3.0
+    container_name: shoppingcart.api
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Development"
+      ASPNETCORE_HTTP_PORTS: "8081"
+      ConnectionStrings__SQLServerDockerConnection: "Server=sqldata,1433;Initial Catalog=ShoppingCartDb;User ID=SA;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;MultipleActiveResultSets=true;"
+      ConnectionStrings__DefaultConnection: "Server=sqldata,1433;Initial Catalog=ShoppingCartDb;User ID=SA;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;MultipleActiveResultSets=true;"
+      RabbitMq__HostName: "rabbitmq"
+      RabbitMq__Port: "5672"
+      RabbitMq__UserName: "${RABBITMQ_DEFAULT_USER}"
+      RabbitMq__Password: "${RABBITMQ_DEFAULT_PASS}"
+      RabbitMqExchange__Exchange: "catalogitems"
+      RabbitMqExchange__QueueName: "itemspricechanged"
+      RabbitMqExchange__RoutingKeys: "myRoutingKey"
+    ports:
+      - "3001:8081"
+    depends_on:
+      - sqldata
+      - rabbitmq
+    restart: unless-stopped
+
+volumes:
+  sqldata_data:

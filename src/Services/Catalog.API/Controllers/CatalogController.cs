@@ -1,5 +1,7 @@
 using System.Net;
 using Catalog.API.Data;
+using Catalog.API.Integration;
+using Catalog.API.Integration.ItemEvents;
 using Catalog.API.Model;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -11,10 +13,17 @@ namespace Catalog.API.Controllers;
 public class CatalogController : ControllerBase
 {
     private readonly CatalogContext _context;
+    private readonly IEventsPublisher _eventsPublisher;
+    private readonly ILogger<CatalogController> _logger;
 
-    public CatalogController(CatalogContext context)
+    public CatalogController(
+        CatalogContext context,
+        IEventsPublisher eventsPublisher,
+        ILogger<CatalogController> logger)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
+        _eventsPublisher = eventsPublisher ?? throw new ArgumentNullException(nameof(eventsPublisher));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     // GET api/Catalog?pageSize=10&pageIndex=0
@@ -146,6 +155,9 @@ public class CatalogController : ControllerBase
             return BadRequest("Invalid CatalogBrand or CatalogType. Make sure the specified brand and type exist.");
         }
 
+        var oldPrice = catalogItem.Price;
+        var priceChanged = oldPrice != productToUpdate.Price;
+
         catalogItem.Name = productToUpdate.Name;
         catalogItem.Description = productToUpdate.Description;
         catalogItem.Price = productToUpdate.Price;
@@ -160,6 +172,21 @@ public class CatalogController : ControllerBase
 
         _context.CatalogItems.Update(catalogItem);
         await _context.SaveChangesAsync();
+
+        if (priceChanged)
+        {
+            var priceChangedEvent = new ItemPriceChangedEvent
+            {
+                Name = catalogItem.Name,
+                Price = catalogItem.Price
+            };
+
+            var published = await _eventsPublisher.Publish(priceChangedEvent);
+            if (!published)
+            {
+                _logger.LogWarning("Failed to publish ItemPriceChangedEvent for item {ItemName} (Id: {ItemId})", catalogItem.Name, catalogItem.Id);
+            }
+        }
 
         return NoContent();
     }

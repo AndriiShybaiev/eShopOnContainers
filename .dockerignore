@@ -1,0 +1,12 @@
+**/.git
+**/.gitignore
+**/.vs
+**/.vscode
+**/.idea
+**/*.user
+**/*.suo
+**/bin
+**/obj
+**/.env
+**/*.pdf
+**/*.md
